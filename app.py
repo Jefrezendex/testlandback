@@ -1,7 +1,10 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os, requests, pdfkit
 
 app = Flask(__name__)
+CORS(app)
+
 
 WKHTMLTOPDF_PATH = "/usr/bin/wkhtmltopdf"
 pdfkit_config = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
