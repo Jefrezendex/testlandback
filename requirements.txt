@@ -2,3 +2,4 @@ flask
 requests
 pdfkit
 gunicorn
+flask-cors
