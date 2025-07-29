@@ -1,54 +1,48 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-import os, requests, pdfkit
+import requests
+import os
+import pdfkit
+import shutil
+import uuid
 
 app = Flask(__name__)
 CORS(app)
 
+config = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
 
-WKHTMLTOPDF_PATH = "/usr/bin/wkhtmltopdf"
-pdfkit_config = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
+@app.route("/gerar", methods=["POST"])
+def gerar_pdf():
+    data = request.get_json()
+    ids = data.get("ids", [])
 
-HTML_DIR = "htmls_salvos"
-PDF_DIR = "pdfs_gerados"
-os.makedirs(HTML_DIR, exist_ok=True)
-os.makedirs(PDF_DIR, exist_ok=True)
+    if not ids:
+        return jsonify({"erro": "Nenhum ID fornecido"}), 400
 
-BASE_URL = "https://rcc-spregula.coletas.online/Transportador/CTR/ImprimeCTR.aspx?id="
+    sessao = str(uuid.uuid4())
+    pasta_html = f"/tmp/htmls_{sessao}"
+    pasta_pdf = f"/tmp/pdfs_{sessao}"
+    os.makedirs(pasta_html, exist_ok=True)
+    os.makedirs(pasta_pdf, exist_ok=True)
 
-@app.route('/executar', methods=['POST'])
-def executar():
-    ids = request.json.get('ids', [])
-    resultados = []
+    url_base = "https://rcc-spregula.coletas.online/Transportador/CTR/ImprimeCTR.aspx?id="
 
     for id_ in ids:
-        id_ = id_.strip()
-        url = BASE_URL + id_
-
-        # Baixar HTML
-        html_path = os.path.join(HTML_DIR, f"{id_}.html")
+        url = url_base + id_
         try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                with open(html_path, "w", encoding="utf-8") as f:
-                    f.write(response.text)
-                resultados.append(f"✔️ HTML salvo para ID {id_}")
+            resposta = requests.get(url)
+            if resposta.status_code == 200:
+                caminho_html = os.path.join(pasta_html, f"{id_}.html")
+                with open(caminho_html, "w", encoding="utf-8") as f:
+                    f.write(resposta.text)
+                caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
+                pdfkit.from_file(caminho_html, caminho_pdf, configuration=config)
             else:
-                resultados.append(f"⚠️ Falha ao baixar HTML do ID {id_}: {response.status_code}")
-                continue
+                print(f"Erro {resposta.status_code} ao baixar {id_}")
         except Exception as e:
-            resultados.append(f"❌ Erro ao baixar HTML do ID {id_}: {e}")
-            continue
+            print(f"Erro ao processar {id_}: {e}")
 
-        # Gerar PDF
-        pdf_path = os.path.join(PDF_DIR, f"{id_}.pdf")
-        try:
-            pdfkit.from_url(url, pdf_path, configuration=pdfkit_config)
-            resultados.append(f"✔️ PDF gerado para ID {id_}")
-        except Exception as e:
-            resultados.append(f"❌ Erro ao gerar PDF do ID {id_}: {e}")
+    zip_path = f"/tmp/ctr_docs_{sessao}.zip"
+    shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
 
-    return jsonify(resultados)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    return send_file(zip_path, as_attachment=True, download_name="CTR_Documentos.zip")
