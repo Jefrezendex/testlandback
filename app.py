@@ -11,11 +11,11 @@ CORS(app)
 # Caminho do wkhtmltopdf no Render
 config = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
 
-# Opções para gerar PDF com layout de tela (evita rotação invertida)
+# Opções para forçar o uso do estilo de tela (screen)
 options = {
-    "no-print-media-type": "",     # Ignora @media print e usa o visual de tela
-    "enable-local-file-access": "", # Permite acesso a CSS/JS externos
-    "zoom": "1.0",                  # Pode ajustar escala se necessário
+    "print-media-type": "",  # Usa media=screen em vez de print
+    "enable-local-file-access": "",  # Permite acessar CSS/JS externos
+    "zoom": "1.0",  # Ajuste de escala
 }
 
 URL_BASE = "https://rcc-spregula.coletas.online/Transportador/CTR/ImprimeCTR.aspx?id="
@@ -32,7 +32,7 @@ def gerar_pdf():
     if not ids:
         return jsonify({"erro": "Nenhum ID fornecido"}), 400
 
-    # Criar pastas temporárias
+    # Criar pasta temporária para PDFs
     sessao = str(uuid.uuid4())
     pasta_pdf = f"/tmp/pdfs_{sessao}"
     os.makedirs(pasta_pdf, exist_ok=True)
@@ -44,14 +44,14 @@ def gerar_pdf():
         url = URL_BASE + id_
         caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
         try:
-            # Gerar PDF diretamente da URL com opções ajustadas
+            # Gera PDF com estilo de tela
             pdfkit.from_url(url, caminho_pdf, configuration=config, options=options)
             total_gerados += 1
             print(f"✔️ PDF gerado: {caminho_pdf}")
         except Exception as e:
             erros.append(f"Erro ao gerar PDF para ID {id_}: {e}")
 
-    # Compactar PDFs em um ZIP
+    # Criar ZIP com todos os PDFs
     zip_path = f"/tmp/ctr_docs_{sessao}.zip"
     shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
 
