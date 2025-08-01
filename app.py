@@ -40,11 +40,17 @@ def gerar_pdf():
         url = URL_BASE + id_
         try:
             resposta = requests.get(url, timeout=15)
+
             if resposta.status_code == 200 and len(resposta.text.strip()) > 0:
+                # Detecta o encoding correto da página (corrige os acentos)
+                resposta.encoding = resposta.apparent_encoding or 'utf-8'
+
+                # Salva o HTML temporário
                 caminho_html = os.path.join(pasta_html, f"{id_}.html")
-                with open(caminho_html, "w", encoding="utf-8") as f:
+                with open(caminho_html, "w", encoding=resposta.encoding, errors="ignore") as f:
                     f.write(resposta.text)
 
+                # Gera PDF a partir do HTML
                 caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
                 try:
                     pdfkit.from_file(caminho_html, caminho_pdf, configuration=config)
@@ -57,10 +63,12 @@ def gerar_pdf():
         except Exception as e:
             erros.append(f"Erro ao processar ID {id_}: {e}")
 
-    # Criar arquivo zip final
+    # Criar arquivo ZIP final
     zip_path = f"/tmp/ctr_docs_{sessao}.zip"
     shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
 
     print(f"📦 {total_gerados} PDFs gerados | {len(erros)} erros")
+    if erros:
+        print("Detalhes dos erros:", erros)
 
     return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR.zip")
