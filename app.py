@@ -11,6 +11,13 @@ CORS(app)
 # Caminho do wkhtmltopdf no Render
 config = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
 
+# Opções para gerar PDF com layout de tela (evita rotação invertida)
+options = {
+    "no-print-media-type": "",     # Ignora @media print e usa o visual de tela
+    "enable-local-file-access": "", # Permite acesso a CSS/JS externos
+    "zoom": "1.0",                  # Pode ajustar escala se necessário
+}
+
 URL_BASE = "https://rcc-spregula.coletas.online/Transportador/CTR/ImprimeCTR.aspx?id="
 
 @app.route("/ping")
@@ -37,8 +44,8 @@ def gerar_pdf():
         url = URL_BASE + id_
         caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
         try:
-            # Gerar PDF diretamente da URL (mantém layout)
-            pdfkit.from_url(url, caminho_pdf, configuration=config)
+            # Gerar PDF diretamente da URL com opções ajustadas
+            pdfkit.from_url(url, caminho_pdf, configuration=config, options=options)
             total_gerados += 1
             print(f"✔️ PDF gerado: {caminho_pdf}")
         except Exception as e:
