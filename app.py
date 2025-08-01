@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, after_this_request
 from flask_cors import CORS
 import requests
 import os
@@ -6,6 +6,8 @@ import pdfkit
 import shutil
 import uuid
 import re
+from bs4 import BeautifulSoup
+import urllib.parse
 
 app = Flask(__name__)
 CORS(app)
@@ -41,21 +43,28 @@ def gerar_pdf():
         try:
             resposta = requests.get(url, timeout=15)
             if resposta.status_code == 200:
-                # Detecta o encoding correto
-                resposta.encoding = resposta.apparent_encoding or 'utf-8'
-                html = resposta.text
+                # Decodifica explicitamente em utf-8
+                html = resposta.content.decode('utf-8', errors='replace')
 
-                # 🔹 Remove ou corrige CSS que gira elementos
-                html_corrigido = re.sub(r'transform\s*:\s*rotate\(180deg\)', '', html, flags=re.IGNORECASE)
+                # Corrige links relativos de imagens para absolutos
+                soup = BeautifulSoup(html, "html.parser")
+                for img in soup.find_all("img"):
+                    src = img.get("src", "")
+                    if src and not src.startswith("http"):
+                        img["src"] = urllib.parse.urljoin(url, src)
 
-                # Salva HTML corrigido temporário
+                html_corrigido = str(soup)
+
+                # Remove rotações 180 graus no CSS
+                html_corrigido = re.sub(r'transform\s*:\s*rotate\(180deg\)', '', html_corrigido, flags=re.IGNORECASE)
+
                 caminho_html = os.path.join(pasta_html, f"{id_}.html")
                 with open(caminho_html, "w", encoding="utf-8", errors="ignore") as f:
                     f.write(html_corrigido)
 
-                # Gera PDF a partir do HTML corrigido
                 caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
                 pdfkit.from_file(caminho_html, caminho_pdf, configuration=config)
+
                 total_gerados += 1
                 print(f"✔️ PDF gerado: {caminho_pdf}")
             else:
@@ -63,12 +72,22 @@ def gerar_pdf():
         except Exception as e:
             erros.append(f"Erro ao processar ID {id_}: {e}")
 
-    # Cria arquivo ZIP final
     zip_path = f"/tmp/ctr_docs_{sessao}.zip"
     shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
 
     print(f"📦 {total_gerados} PDFs gerados | {len(erros)} erros")
     if erros:
         print("Detalhes dos erros:", erros)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            shutil.rmtree(pasta_html)
+            shutil.rmtree(pasta_pdf)
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        except Exception as e:
+            print("Erro na limpeza dos arquivos temporários:", e)
+        return response
 
     return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR.zip")
