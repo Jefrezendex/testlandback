@@ -1,6 +1,5 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-import requests
 import os
 import pdfkit
 import shutil
@@ -26,11 +25,9 @@ def gerar_pdf():
     if not ids:
         return jsonify({"erro": "Nenhum ID fornecido"}), 400
 
-    # Pasta temporária única para cada requisição
+    # Criar pastas temporárias
     sessao = str(uuid.uuid4())
-    pasta_html = f"/tmp/htmls_{sessao}"
     pasta_pdf = f"/tmp/pdfs_{sessao}"
-    os.makedirs(pasta_html, exist_ok=True)
     os.makedirs(pasta_pdf, exist_ok=True)
 
     total_gerados = 0
@@ -38,32 +35,16 @@ def gerar_pdf():
 
     for id_ in ids:
         url = URL_BASE + id_
+        caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
         try:
-            resposta = requests.get(url, timeout=15)
-
-            if resposta.status_code == 200 and len(resposta.text.strip()) > 0:
-                # Detecta o encoding correto da página (corrige os acentos)
-                resposta.encoding = resposta.apparent_encoding or 'utf-8'
-
-                # Salva o HTML temporário
-                caminho_html = os.path.join(pasta_html, f"{id_}.html")
-                with open(caminho_html, "w", encoding=resposta.encoding, errors="ignore") as f:
-                    f.write(resposta.text)
-
-                # Gera PDF a partir do HTML
-                caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
-                try:
-                    pdfkit.from_file(caminho_html, caminho_pdf, configuration=config)
-                    total_gerados += 1
-                    print(f"✔️ PDF gerado: {caminho_pdf}")
-                except Exception as e:
-                    erros.append(f"Erro ao gerar PDF {id_}: {e}")
-            else:
-                erros.append(f"Falha ao baixar ID {id_} (status {resposta.status_code})")
+            # Gerar PDF diretamente da URL (mantém layout)
+            pdfkit.from_url(url, caminho_pdf, configuration=config)
+            total_gerados += 1
+            print(f"✔️ PDF gerado: {caminho_pdf}")
         except Exception as e:
-            erros.append(f"Erro ao processar ID {id_}: {e}")
+            erros.append(f"Erro ao gerar PDF para ID {id_}: {e}")
 
-    # Criar arquivo ZIP final
+    # Compactar PDFs em um ZIP
     zip_path = f"/tmp/ctr_docs_{sessao}.zip"
     shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
 
