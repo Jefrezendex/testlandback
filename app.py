@@ -29,7 +29,14 @@ def limpar_sessoes_antigas():
             pass
 
 def gerar_pdf_minimo(path, texto):
-    # Gera um PDF mínimo válido contendo texto simples
+    stream_text = f"""BT
+/F1 12 Tf
+10 180 Td
+({texto}) Tj
+ET
+"""
+    stream_length = len(stream_text)
+    
     conteudo = f"""%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -41,13 +48,9 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
 endobj
 4 0 obj
-<< /Length {len(texto) + 38} >>
+<< /Length {stream_length} >>
 stream
-BT
-/F1 12 Tf
-10 180 Td
-({texto}) Tj
-ET
+{stream_text}
 endstream
 endobj
 5 0 obj
@@ -64,7 +67,7 @@ xref
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
-{len(conteudo) + len(texto) + 100}
+{len(conteudo) + 100}
 %%EOF
 """
     with open(path, "wb") as f:
@@ -124,3 +127,6 @@ def finalizar_zip():
 
     shutil.rmtree(session_path, ignore_errors=True)
     return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR_Final.zip")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
