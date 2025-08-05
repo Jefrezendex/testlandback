@@ -1,62 +1,72 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import os
-import pdfkit
 import shutil
+import tempfile
 import uuid
+from zipfile import ZipFile
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
 
-# Caminho do wkhtmltopdf no Render
-config = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
+BASE_TEMP_DIR = os.path.join(tempfile.gettempdir(), "ctr_lotes")
+os.makedirs(BASE_TEMP_DIR, exist_ok=True)
 
-# Opções para forçar o uso do estilo de tela (screen)
-options = {
-    "print-media-type": "",  # Usa media=screen em vez de print
-    "enable-local-file-access": "",  # Permite acessar CSS/JS externos
-    "zoom": "1.0",  # Ajuste de escala
-}
+# Limpa sessões antigas com mais de 1 hora
+def limpar_sessoes_antigas():
+    agora = datetime.now()
+    for pasta in os.listdir(BASE_TEMP_DIR):
+        caminho = os.path.join(BASE_TEMP_DIR, pasta)
+        if os.path.isdir(caminho):
+            ultima_mod = datetime.fromtimestamp(os.path.getmtime(caminho))
+            if agora - ultima_mod > timedelta(hours=1):
+                shutil.rmtree(caminho, ignore_errors=True)
+        elif pasta.endswith(".zip"):
+            ultima_mod = datetime.fromtimestamp(os.path.getmtime(caminho))
+            if agora - ultima_mod > timedelta(hours=1):
+                os.remove(caminho)
 
-URL_BASE = "https://rcc-spregula.coletas.online/Transportador/CTR/ImprimeCTR.aspx?id="
-
-@app.route("/ping")
-def ping():
-    return {"status": "ok"}
-
-@app.route("/gerar", methods=["POST"])
-def gerar_pdf():
+@app.route("/gerar-lote", methods=["POST"])
+def gerar_lote():
+    limpar_sessoes_antigas()
     data = request.get_json()
-    ids = data.get("ids", [])
+    ids = data.get("ids")
+    session_id = data.get("session_id")
 
-    if not ids:
-        return jsonify({"erro": "Nenhum ID fornecido"}), 400
+    if not ids or not session_id:
+        return jsonify({"erro": "IDs ou session_id ausente"}), 400
 
-    # Criar pasta temporária para PDFs
-    sessao = str(uuid.uuid4())
-    pasta_pdf = f"/tmp/pdfs_{sessao}"
-    os.makedirs(pasta_pdf, exist_ok=True)
+    session_path = os.path.join(BASE_TEMP_DIR, session_id)
+    os.makedirs(session_path, exist_ok=True)
 
-    total_gerados = 0
-    erros = []
+    # Geração de PDFs simulada
+    for _id in ids:
+        pdf_path = os.path.join(session_path, f"{_id}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(b"%PDF-1.4\n% Simulacao de PDF para ID: " + _id.encode() + b"\n%%EOF")
 
-    for id_ in ids:
-        url = URL_BASE + id_
-        caminho_pdf = os.path.join(pasta_pdf, f"{id_}.pdf")
-        try:
-            # Gera PDF com estilo de tela
-            pdfkit.from_url(url, caminho_pdf, configuration=config, options=options)
-            total_gerados += 1
-            print(f"✔️ PDF gerado: {caminho_pdf}")
-        except Exception as e:
-            erros.append(f"Erro ao gerar PDF para ID {id_}: {e}")
+    return jsonify({"status": "Lote recebido"}), 200
 
-    # Criar ZIP com todos os PDFs
-    zip_path = f"/tmp/ctr_docs_{sessao}.zip"
-    shutil.make_archive(zip_path.replace(".zip", ""), 'zip', pasta_pdf)
+@app.route("/finalizar", methods=["POST"])
+def finalizar_zip():
+    limpar_sessoes_antigas()
+    data = request.get_json()
+    session_id = data.get("session_id")
 
-    print(f"📦 {total_gerados} PDFs gerados | {len(erros)} erros")
-    if erros:
-        print("Detalhes dos erros:", erros)
+    session_path = os.path.join(BASE_TEMP_DIR, session_id)
+    if not os.path.exists(session_path):
+        return jsonify({"erro": "Sessão não encontrada"}), 404
 
-    return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR.zip")
+    zip_path = os.path.join(BASE_TEMP_DIR, f"{session_id}.zip")
+
+    with ZipFile(zip_path, "w") as zipf:
+        for filename in os.listdir(session_path):
+            full_path = os.path.join(session_path, filename)
+            zipf.write(full_path, arcname=filename)
+
+    shutil.rmtree(session_path, ignore_errors=True)
+    return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR_Final.zip")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
