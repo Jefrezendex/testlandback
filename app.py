@@ -1,8 +1,9 @@
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
+from reportlab.pdfgen import canvas
 import os
-import shutil
 import tempfile
+import shutil
 from zipfile import ZipFile
 from datetime import datetime, timedelta
 
@@ -13,6 +14,7 @@ BASE_TEMP_DIR = os.path.join(tempfile.gettempdir(), "ctr_lotes")
 os.makedirs(BASE_TEMP_DIR, exist_ok=True)
 
 def limpar_sessoes_antigas():
+    """Remove sessões e ZIPs com mais de 1h para liberar espaço."""
     agora = datetime.now()
     for pasta in os.listdir(BASE_TEMP_DIR):
         caminho = os.path.join(BASE_TEMP_DIR, pasta)
@@ -28,50 +30,14 @@ def limpar_sessoes_antigas():
         except:
             pass
 
-def gerar_pdf_minimo(path, texto):
-    stream_text = f"""BT
-/F1 12 Tf
-10 180 Td
-({texto}) Tj
-ET
-"""
-    stream_length = len(stream_text)
-    
-    conteudo = f"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Count 1 /Kids [3 0 R] >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length {stream_length} >>
-stream
-{stream_text}
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000010 00000 n 
-0000000060 00000 n 
-0000000117 00000 n 
-0000000212 00000 n 
-0000000305 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-{len(conteudo) + 100}
-%%EOF
-"""
-    with open(path, "wb") as f:
-        f.write(conteudo.encode("latin1"))
+def gerar_pdf_reportlab(path, texto):
+    """Gera PDF válido usando reportlab."""
+    c = canvas.Canvas(path)
+    c.setFont("Helvetica", 16)
+    c.drawString(50, 750, "Documento CTR")
+    c.setFont("Helvetica", 12)
+    c.drawString(50, 720, f"ID: {texto}")
+    c.save()
 
 @app.route("/gerar-lote", methods=["POST"])
 def gerar_lote():
@@ -88,9 +54,9 @@ def gerar_lote():
 
     for _id in ids:
         pdf_path = os.path.join(session_path, f"{_id}.pdf")
-        gerar_pdf_minimo(pdf_path, f"Documento CTR ID: {_id}")
+        gerar_pdf_reportlab(pdf_path, _id)
 
-    return jsonify({"status": "Lote recebido"}), 200
+    return jsonify({"status": "ok", "lote": len(ids)}), 200
 
 @app.route("/progresso", methods=["POST"])
 def progresso():
@@ -115,11 +81,11 @@ def finalizar_zip():
     if not os.path.exists(session_path):
         return jsonify({"erro": "Sessão não encontrada"}), 404
 
-    arquivos = os.listdir(session_path)
-    print(f"Arquivos na sessão {session_id}: {arquivos}")  # DEBUG
+    arquivos = [f for f in os.listdir(session_path) if f.endswith(".pdf")]
+    if not arquivos:
+        return jsonify({"erro": "Nenhum PDF gerado"}), 400
 
     zip_path = os.path.join(BASE_TEMP_DIR, f"{session_id}.zip")
-
     with ZipFile(zip_path, "w") as zipf:
         for filename in arquivos:
             full_path = os.path.join(session_path, filename)
