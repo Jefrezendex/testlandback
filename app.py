@@ -112,15 +112,15 @@ def finalizar_zip():
     if not os.path.exists(session_path):
         return jsonify({"erro": "Sessão não encontrada"}), 404
 
+    arquivos = os.listdir(session_path)
+    print(f"Arquivos na sessão {session_id}: {arquivos}")  # DEBUG
+
     zip_path = os.path.join(BASE_TEMP_DIR, f"{session_id}.zip")
 
     with ZipFile(zip_path, "w") as zipf:
-        for filename in os.listdir(session_path):
+        for filename in arquivos:
             full_path = os.path.join(session_path, filename)
             zipf.write(full_path, arcname=filename)
 
     shutil.rmtree(session_path, ignore_errors=True)
     return send_file(zip_path, as_attachment=True, download_name="Documentos_CTR_Final.zip")
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
